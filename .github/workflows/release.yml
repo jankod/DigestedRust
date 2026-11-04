@@ -1,0 +1,291 @@
+name: Release
+
+# Trigger: push a version tag (e.g. git tag v0.2.0 && git push --tags)
+# or run manually from the Actions tab.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create GitHub Releases and upload assets
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Python wheels — massq_py PyO3 extension
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs:
+
+  # ── Linux x86_64 (glibc) ───────────────────────────────────────────────────
+  # manylinux_2_28 = AlmaLinux 8 container; has clang which rocksdb-sys needs.
+  # manylinux 'auto' (CentOS 7) does NOT have clang → Docker exit 1.
+  wheels-linux-x86_64:
+    name: Wheel · Linux · x86_64
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: x86_64
+          manylinux: '2_28'
+          # AlmaLinux 8 doesn't install clang by default; rocksdb-sys/bindgen needs it.
+          before-script-linux: yum install -y clang
+          args: --release --out dist --find-interpreter --features python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-x86_64
+          path: dist/
+
+  # ── Linux aarch64 (glibc) — native ARM runner, no QEMU/cross needed ────────
+  wheels-linux-aarch64:
+    name: Wheel · Linux · aarch64
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: aarch64
+          manylinux: '2_28'
+          before-script-linux: yum install -y clang
+          args: --release --out dist --find-interpreter --features python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-aarch64
+          path: dist/
+
+  # ── Linux musl x86_64 (Alpine / Docker scratch) ────────────────────────────
+  wheels-musllinux:
+    name: Wheel · musl Linux · x86_64
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: x86_64
+          manylinux: musllinux_1_2
+          # rust-musl-cross is Debian-based (not Alpine) — use apt-get.
+          before-script-linux: apt-get install -y clang
+          args: --release --out dist --find-interpreter --features python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-musllinux-x86_64
+          path: dist/
+
+  # ── macOS universal2 (Intel + Apple Silicon in one wheel) ──────────────────
+  # macos-13 (Intel runner) was retired. Build universal2 on Apple Silicon
+  # runner — covers both architectures via Rosetta 2 / native ARM.
+  wheels-macos:
+    name: Wheel · macOS · universal2
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Add Intel target for universal2
+        run: rustup target add x86_64-apple-darwin
+      - name: Build wheels (universal2)
+        uses: PyO3/maturin-action@v1
+        env:
+          # RocksDB C++17 aligned allocation requires macOS 10.14+.
+          MACOSX_DEPLOYMENT_TARGET: '10.14'
+        with:
+          target: universal2-apple-darwin
+          args: --release --out dist --find-interpreter --features python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-universal2
+          path: dist/
+
+  # ── Windows x86_64 ─────────────────────────────────────────────────────────
+  wheels-windows:
+    name: Wheel · Windows · x86_64
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          architecture: x64
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: x64
+          args: --release --out dist --find-interpreter --features python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-x86_64
+          path: dist/
+
+  # ── sdist (source distribution) ───────────────────────────────────────────
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-sdist
+          path: dist/
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # CLI binaries — massq + database build pipeline (step1 … step7)
+  # Packaged per platform as one archive:
+  #   digested-rust-<tag>-<platform>.tar.gz   (Linux / macOS)
+  #   digested-rust-<tag>-<platform>.zip      (Windows)
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  cli-binaries:
+    name: CLI · ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      BINS: >-
+        massq
+        step1_uniprot_xml_to_parquet
+        step2_cleavage_protein
+        step3_sort_parquet
+        step4_populate_rocks_db
+        step5_build_taxonomy_bin
+        step6_build_dict_bin
+        step7_validate_db
+      # RocksDB C++17 aligned allocation requires macOS 10.14+.
+      MACOSX_DEPLOYMENT_TARGET: '10.14'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - name: linux-aarch64
+            runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - name: macos-universal2
+            runner: macos-latest
+            target: universal2
+          - name: windows-x86_64
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: cli-${{ matrix.name }}
+
+      - name: Package name
+        shell: bash
+        run: echo "PKG=digested-rust-${GITHUB_REF_NAME}-${{ matrix.name }}" >> "$GITHUB_ENV"
+
+      # ── macOS universal2: build both arches, lipo-merge every binary ──────
+      - name: Build (macOS universal2)
+        if: matrix.name == 'macos-universal2'
+        shell: bash
+        run: |
+          rustup target add x86_64-apple-darwin aarch64-apple-darwin
+          BIN_ARGS=$(for b in $BINS; do printf -- '--bin %s ' "$b"; done)
+          cargo build --release $BIN_ARGS --target x86_64-apple-darwin
+          cargo build --release $BIN_ARGS --target aarch64-apple-darwin
+          mkdir -p "$PKG"
+          for b in $BINS; do
+            lipo -create \
+              "target/x86_64-apple-darwin/release/$b" \
+              "target/aarch64-apple-darwin/release/$b" \
+              -output "$PKG/$b"
+          done
+
+      # ── Linux / Windows: single native build ──────────────────────────────
+      - name: Build (Linux / Windows)
+        if: matrix.name != 'macos-universal2'
+        shell: bash
+        run: |
+          BIN_ARGS=$(for b in $BINS; do printf -- '--bin %s ' "$b"; done)
+          cargo build --release $BIN_ARGS --target ${{ matrix.target }}
+          mkdir -p "$PKG"
+          EXT=""; [ "$RUNNER_OS" = "Windows" ] && EXT=".exe"
+          for b in $BINS; do
+            cp "target/${{ matrix.target }}/release/$b$EXT" "$PKG/"
+          done
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          EXT=""; [ "$RUNNER_OS" = "Windows" ] && EXT=".exe"
+          "$PKG/massq$EXT" --help > /dev/null
+
+      - name: Archive (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cp README.md "$PKG/"
+          tar -czf "$PKG.tar.gz" "$PKG"
+
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item README.md "$env:PKG/"
+          Compress-Archive -Path "$env:PKG" -DestinationPath "$env:PKG.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.name }}
+          path: ${{ env.PKG }}.*
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # GitHub Release — upload wheels + CLI archives + SHA256SUMS
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - wheels-linux-x86_64
+      - wheels-linux-aarch64
+      - wheels-musllinux
+      - wheels-macos
+      - wheels-windows
+      - sdist
+      - cli-binaries
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Collect all artifacts into one directory
+        run: |
+          mkdir -p release_files
+          find artifacts/ -type f -exec cp {} release_files/ \;
+          cd release_files && sha256sum * > SHA256SUMS.txt
+          ls -lh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release_files/*
+          generate_release_notes: true
+          draft: false
+          make_latest: true

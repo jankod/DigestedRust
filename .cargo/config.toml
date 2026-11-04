@@ -1,0 +1,6 @@
+[build]
+# not for portability
+#rustflags = ["-C", "target-cpu=native"]
+
+# somewhat more conservative
+#rustflags = ["-C", "target-cpu=x86-64-v2"]

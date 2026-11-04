@@ -1,0 +1,19 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "massq-py"
+version = "0.1.4"
+description = "Python bindings for DigestedRust mass-database range queries"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.9"
+dependencies = [
+    "maturin>=1.12.6",
+]
+
+[tool.maturin]
+# Override the Python module name (default would be derived from [lib] name = "digested_rust").
+module-name = "massq_py"
+# Activate the pyo3 feature flag defined in Cargo.toml.
+features = ["python"]

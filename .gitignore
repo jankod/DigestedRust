@@ -1,0 +1,22 @@
+/target
+/my_db
+/grouped_with_ids.slad_db
+/data/
+!/demo_rocksdb_storage/
+/params.txt
+
+# Locally built databases and pipeline outputs
+/databases_output/
+
+# Benchmark JSON reports (markdown summaries are tracked)
+/benchmarks/*.json
+
+# Local scratch / tooling
+/misc/
+/.serena/
+/.github/copilot-instructions.md
+
+__pycache__/
+/python_orchestrator/.idea
+/python_orchestrator/.venv
+/.idea/

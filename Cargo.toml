@@ -1,0 +1,124 @@
+[package]
+name = "digested_rust"
+version = "0.1.4"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+description = "High-performance peptide mass index and search engine (DigestedProteinDB)"
+repository = "https://github.com/jankod/DigestedRust"
+
+# cdylib is required for maturin/PyO3 Python extension modules.
+# rlib keeps the library available for the CLI binary targets in this workspace.
+[lib]
+name = "digested_rust"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Enable the PyO3 Python extension module (`massq_py`).
+# Build with: maturin develop --features python
+python = ["dep:pyo3"]
+
+[dependencies]
+pyo3 = { version = "0.28.2", features = ["extension-module"], optional = true }
+flate2 = "1"
+quick-xml = "0.39.0"
+parquet = { version = "58.0.0", features = ["arrow", "zstd"] }
+arrow-array = "58.0.0"
+arrow-schema = "58.0.0"
+anyhow = "1"
+humantime = "2"
+dotenvy = "0.15"
+rayon = "1.10"
+rocksdb = "0.24.0"
+rkyv = { version = "0.8.15", features = ["bytecheck"] }
+memmap2 = "0.9.10"
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "1.0.7+spec-1.1.0"
+semver = "1"
+sha2 = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+chrono = "0.4"
+sysinfo = "0.38.4"
+rand = "0.10.0"
+
+
+[[bin]]
+name = "step1_uniprot_xml_to_parquet"
+path = "src/step1_uniprot_xml_to_parquet.rs"
+
+
+[[bin]]
+name = "step2_cleavage_protein"
+path = "src/step2_cleavage_protein.rs"
+
+[[bin]]
+name = "step3_sort_parquet"
+path = "src/step3_sort_parquet.rs"
+
+
+
+[[bin]]
+name = "step4_populate_rocks_db"
+path = "src/step4_populate_rocks_db.rs"
+
+[[bin]]
+name = "step6_build_dict_bin"
+path = "src/step6_build_dict_bin.rs"
+
+[[bin]]
+name = "step7_validate_db"
+path = "src/step7_validate_db.rs"
+
+[[bin]]
+name = "step5_build_taxonomy_bin"
+path = "src/step5_build_taxonomy_bin.rs"
+
+[[bin]]
+name = "massq"
+path = "src/massq.rs"
+
+
+[[bin]]
+name = "rocksdb_demo"
+path = "src/demo/rocksdb_demo.rs"
+
+[[bin]]
+name = "massq_bench"
+path = "src/massq_bench.rs"
+
+[dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
+rand = "0.10.0"
+tempfile = "3"
+
+[[bench]]
+name = "trypsin_bench"
+harness = false
+
+[profile.release]
+opt-level = 3 # maximum optimizations
+lto = true
+codegen-units = 1 # slower build, but often a faster binary
+debug = 0
+panic = "abort" # smaller binary (if you don't need unwinding)
+strip = "symbols" # smaller binary
+
+[profile.fast]
+inherits = "release"
+lto = true
+codegen-units = 1
+strip = "none"
+debug = true
+
+[profile.bench]
+inherits = "release"
+
+
+[profile.dev]
+# development optimizations (dev profile)
+opt-level = 0          # Fast build, slow program
+debug = 1              # Less debug info speeds up linking
+incremental = true     # Enabled by default, but double-check
