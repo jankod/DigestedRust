@@ -2,7 +2,7 @@
 
 Rust pipeline for building and searching a database of peptides produced by enzymatic digestion of UniProt proteins.
 
-Project page: <https://digestedproteindb.pbf.hr/enterprise.php>
+Project page: <https://digestedproteindb.pbf.hr/digestedrust.php>
 
 ## Download
 
@@ -274,4 +274,4 @@ of the License, or (at your option) any later version. See [LICENSE](LICENSE).
 
 If you run a modified version of this software as a network service, the AGPL requires you to make
 the modified source code available to its users. For commercial licensing without these
-obligations, see <https://digestedproteindb.pbf.hr/enterprise.php>.
+obligations, see <https://digestedproteindb.pbf.hr/digestedrust.php>.
